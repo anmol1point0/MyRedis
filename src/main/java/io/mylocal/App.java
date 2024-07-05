@@ -1,35 +1,53 @@
 package io.mylocal;
 
+import io.mylocal.parser.RespParser;
+import io.mylocal.streams.MyRedisInputStream;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.List;
 import java.util.Locale;
 
 public class App {
 
-    private static void handleClient(Socket clientSocket) {
-        BufferedReader stdIn = null;
+    private static void handleClient(Socket clientSocket) throws IOException {
         PrintWriter out = null;
+        MyRedisInputStream in = null;
         try {
 
             out = new PrintWriter(clientSocket.getOutputStream(), true);
-            BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-            stdIn = new BufferedReader(new InputStreamReader(System.in));
+            in = new MyRedisInputStream(clientSocket.getInputStream());
+            System.out.println("Reached here");
 
-            String line;
-            while ((line = in.readLine()) != null) {
-                if (line.toLowerCase(Locale.ROOT).contains("ping"))
-                    out.println("PONG");
+            Object obj = RespParser.read(in);
+
+            if(obj instanceof List<?>) {
+                List<?> list = (List<?>) obj;
+                if (!list.isEmpty() && list.get(0) instanceof byte[]) {
+                    byte[] command = (byte[]) list.get(0);
+                    if(new String(command).toLowerCase(Locale.ROOT).equals("echo")){
+                        out.println(new String((byte[])list.get(1)));
+                        out.flush();
+                    }
+                }
             }
-        } catch (Exception e) {
+            else if (obj instanceof String) {
+                String command = (String) obj;
+                if (command.toLowerCase(Locale.ROOT).equals("ping")) {
+                    out.println("+PONG\r\n");
+                    out.flush();
+                }
+            }
+    } catch (Exception e) {
             System.out.println("Error while handling client request: " + e.getMessage());
         } finally {
             try {
-                if (stdIn != null) {
-                    stdIn.close();
+                if (in != null) {
+                    in.close();
                 }
                 if (out != null) {
                     out.close();
